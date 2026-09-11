@@ -9,6 +9,7 @@ USE retriever_dashboard;
 
 -- ============================================================
 -- table for departments
+-- includes retriervier essentials and retriever care
 -- ============================================================
 
 
@@ -33,7 +34,7 @@ CREATE TABLE studentInfo(
 -- ============================================================
 
 
-CREATE TABLE (
+CREATE TABLE users(
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL UNIQUE
 );
