@@ -41,10 +41,12 @@ CREATE TABLE users (
 CREATE TABLE metrics (
     id INT PRIMARY KEY AUTO_INCREMENT,
     department_id INT NOT NULL,
-    metric_name VARCHAR(150) NOT NULL,
-    date DATE NOT NULL,
+    metric_type_id INT NOT NULL,
+    metric_date DATE NOT NULL,
     count INT NOT NULL,
-    FOREIGN KEY (department_id) REFERENCES departments(id)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id),
+    FOREIGN KEY (metric_type_id) REFERENCES metric_types(id)
 );
 
 
@@ -52,12 +54,34 @@ CREATE TABLE metrics (
 -- table for uploads (csv)
 -- ============================================================
 
+
 CREATE TABLE uploads (
     id INT PRIMARY KEY AUTO_INCREMENT,
     department_id INT NOT NULL,
     uploaded_by INT NOT NULL,
-    upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     filename VARCHAR(255),
+    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    row_count INT,
+    status ENUM('success', 'partial', 'failed') DEFAULT 'success',
     FOREIGN KEY (department_id) REFERENCES departments(id),
     FOREIGN KEY (uploaded_by) REFERENCES users(id)
+);
+ 
+
+CREATE TABLE upload_errors (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    upload_id INT NOT NULL,
+    row_number INT,
+    error_message VARCHAR(255),
+    FOREIGN KEY (upload_id) REFERENCES uploads(id)
+);
+
+
+CREATE TABLE demographics (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    metric_id INT NOT NULL,
+    category VARCHAR(100) NOT NULL,   -- year or age range
+    value VARCHAR(100) NOT NULL,      -- ass range or class
+    count INT NOT NULL,
+    FOREIGN KEY (metric_id) REFERENCES metrics(id)
 );
