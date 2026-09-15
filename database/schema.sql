@@ -37,6 +37,13 @@ CREATE TABLE users (
 -- table for metrics
 -- ============================================================
 
+CREATE TABLE metric_types (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(150) NOT NULL UNIQUE,
+    description VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 
 CREATE TABLE metrics (
     id INT PRIMARY KEY AUTO_INCREMENT,
