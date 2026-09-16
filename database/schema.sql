@@ -94,9 +94,6 @@ CREATE TABLE demographics (
 );
 
 
---DATA FOR TESTING
-
-
 INSERT INTO departments (name) VALUES
 ('Retriever Essentials'),
 ('Retriever Care'),
@@ -116,7 +113,7 @@ INSERT INTO metric_types (name, description) VALUES
  
 
 
-INSERT INTO users (name, email, password_hash, role, department_id) VALUES
+INSERT INTO users (name, email, role, department_id) VALUES
 ('Joe Joe', 'jj@umbc.edu', 'dean', NULL),
 ('Sample VP', 'vp@umbc.edu', 'vp', NULL),
 ('Retriever Essentials Director', 'essentials_dir@umbc.edu', 'director', 1),
