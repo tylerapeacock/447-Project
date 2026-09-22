@@ -75,23 +75,7 @@ CREATE TABLE uploads (
 );
  
 
-CREATE TABLE upload_errors (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    upload_id INT NOT NULL,
-    row_number INT,
-    error_message VARCHAR(255),
-    FOREIGN KEY (upload_id) REFERENCES uploads(id)
-);
 
-
-CREATE TABLE demographics (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    metric_id INT NOT NULL,
-    category VARCHAR(100) NOT NULL,   -- year or age range
-    value VARCHAR(100) NOT NULL,      -- age range or class
-    count INT NOT NULL,
-    FOREIGN KEY (metric_id) REFERENCES metrics(id)
-);
 
 
 INSERT INTO departments (name) VALUES
