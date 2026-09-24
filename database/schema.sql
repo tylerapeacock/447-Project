@@ -102,8 +102,8 @@ INSERT INTO metric_types (name, description) VALUES
 INSERT INTO users (name, email, role, department_id) VALUES
 ('Joe Joe', 'jj@umbc.edu', 'dean', NULL),
 ('Sample VP', 'vp@umbc.edu', 'vp', NULL),
-('Retriever Essentials Director', 'essentials_dir@umbc.edu', 'director', 1),
-('Retriever Care Director', 'care_dir@umbc.edu', 'director', 2),
+('Retriever Essentials Director', 'essentials_dir@umbc.edu', 'director', NULL),
+('Retriever Care Director', 'care_dir@umbc.edu', 'director', NULL),
 ('Retriever Essentials Admin', ..., 'department_administrator', 1),
 ('Retriever Care Admin', ..., 'department_administrator', 2);
  
