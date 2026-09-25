@@ -28,7 +28,9 @@ CREATE TABLE users (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(150) NOT NULL UNIQUE,
-    role ENUM('dean', 'vp', 'director', 'assistant_director') NOT NULL,
+    role ENUM('dean', 'vp', 'director', 'assistant_director', 'department_administrator') NOT NULL,
+    -- dean, vp, director, assistant_director: read-only, portfolio-wide (department_id stays NULL)
+    -- department_administrator: read/write, scoped to their own department (department_id required)
     department_id INT,
     FOREIGN KEY (department_id) REFERENCES departments(id)
 );
@@ -75,23 +77,7 @@ CREATE TABLE uploads (
 );
  
 
-CREATE TABLE upload_errors (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    upload_id INT NOT NULL,
-    row_number INT,
-    error_message VARCHAR(255),
-    FOREIGN KEY (upload_id) REFERENCES uploads(id)
-);
 
-
-CREATE TABLE demographics (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    metric_id INT NOT NULL,
-    category VARCHAR(100) NOT NULL,   -- year or age range
-    value VARCHAR(100) NOT NULL,      -- age range or class
-    count INT NOT NULL,
-    FOREIGN KEY (metric_id) REFERENCES metrics(id)
-);
 
 
 INSERT INTO departments (name) VALUES
@@ -116,8 +102,10 @@ INSERT INTO metric_types (name, description) VALUES
 INSERT INTO users (name, email, role, department_id) VALUES
 ('Joe Joe', 'jj@umbc.edu', 'dean', NULL),
 ('Sample VP', 'vp@umbc.edu', 'vp', NULL),
-('Retriever Essentials Director', 'essentials_dir@umbc.edu', 'director', 1),
-('Retriever Care Director', 'care_dir@umbc.edu', 'director', 2);
+('Retriever Essentials Director', 'essentials_dir@umbc.edu', 'director', NULL),
+('Retriever Care Director', 'care_dir@umbc.edu', 'director', NULL),
+('Retriever Essentials Admin', ..., 'department_administrator', 1),
+('Retriever Care Admin', ..., 'department_administrator', 2);
  
 
 INSERT INTO metrics (department_id, metric_type_id, metric_date, count) VALUES
