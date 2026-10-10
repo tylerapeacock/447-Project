@@ -104,8 +104,8 @@ INSERT INTO users (name, email, role, department_id) VALUES
 ('Sample VP', 'vp@umbc.edu', 'vp', NULL),
 ('Retriever Essentials Director', 'essentials_dir@umbc.edu', 'director', NULL),
 ('Retriever Care Director', 'care_dir@umbc.edu', 'director', NULL),
-('Retriever Essentials Admin', ..., 'department_administrator', 1),
-('Retriever Care Admin', ..., 'department_administrator', 2);
+('Retriever Essentials Admin', 'essentials_admin@umbc.edu', 'department_administrator', 1),
+('Retriever Care Admin', 'care_admin@umbc.edu', 'department_administrator', 2);
  
 
 INSERT INTO metrics (department_id, metric_type_id, metric_date, count) VALUES
