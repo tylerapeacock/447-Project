@@ -1,0 +1,6 @@
+.items li {
+  font-style: 2em;
+  list-style: none;
+  text-align: center;
+  margin: 0;
+}
