@@ -1,10 +1,18 @@
+function List() {
+  const options = [
+    { id: 1, label: "option1" },
+    { id: 2, label: "op2" },
+    { id: 3, label: "op3" },
+    { id: 4, label: "op4" },
+  ];
 
-function List(){
-    
-    const options = ["option1", "op2", "op3", "op4"];
+  const listItems = options.map((option) => (
+    <li key={option.id}>{option.label}</li>
+  ));
+  
 
-    const listItems = options.map(option => <li> {option}</li>);
-
-    return (<ul className="items">{listItems}</ul>);
+  return <ul className="items">{listItems}</ul>;
+  
 }
-export default List
+
+export default List;
