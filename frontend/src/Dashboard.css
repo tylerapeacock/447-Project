@@ -4,6 +4,7 @@
     left: 0;
     width: 100%;
     height: 100%;
+    pointer-events: none;
 }
 .title{
     font-size: 2rem;
@@ -12,7 +13,12 @@
     -webkit-text-stroke: 1px #776805;
     margin: 0;
     text-transform: uppercase;
+    text-align: center;
     letter-spacing: 1px;
+    background-color: gold;
+    box-shadow: 5px 5px 5px;
+    border: 1px solid black;
+    border-radius: 10px;
 }
 .Board {
     min-height: 100vh;
