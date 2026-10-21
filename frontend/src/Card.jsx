@@ -10,6 +10,7 @@ function Card(props) {
     <div className="card">
       <h2 className="card-title">Sample header</h2>
       <OrderedList items={steps}></OrderedList>
+      
     </div>
   );
 }
