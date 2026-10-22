@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Department, User, Metric
+from models import Department, User, Metric, MetricType
 
 app = FastAPI()
 
@@ -60,6 +60,26 @@ def getMetrics(
             "Count": m.count,
         }
         for m in q.all()
+    ]
+
+@app.get("/metrics")
+def getMetrics(start=None, end=None, department_id=None, db: Session = Depends(get_db)):
+    q = db.query(Metric, MetricType.name).join(MetricType)
+    if department_id:
+        q = q.filter(Metric.department_id == department_id)
+    if start:
+        q = q.filter(Metric.metric_date >= start)
+    if end:
+        q = q.filter(Metric.metric_date <= end)
+    return [
+        {
+            "Metric ID": m.id,
+            "Department ID": m.department_id,
+            "Metric Type": type_name,
+            "Date": m.metric_date,
+            "Count": m.count,
+        }
+        for m, type_name in q.all()
     ]
 
 @app.get("/")
