@@ -3,12 +3,18 @@ import Card from "./Card.jsx";
 import "./Card.css";
 import SafeTextInput from "./SafeTextInput.jsx";
 import DateRangeSelector from "./DateRangeSelector.jsx";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import CsvChart from "./CsvChart.jsx";
+import { getMetrics } from "./api/api";
 
 function Dashboard() {
   const [name, setName] = useState("");
   const [range, setRange] = useState({ start: "", end: "" });
+  const [metrics, setMetrics] = useState([]);
+
+  useEffect(() => {
+    getMetrics({ start: range.start, end: range.end }).then(setMetrics);
+  }, [range.start, range.end]);
 
   return (
     <div className="Board">
@@ -24,7 +30,7 @@ function Dashboard() {
             <Card />
           </aside>
           <div className="chart-cell">
-            <CsvChart csvUrl="/data/sales.csv" />
+            <CsvChart data={metrics} />
           </div>
           <aside className="stats-panel">
             <Card />
