@@ -28,6 +28,7 @@ CREATE TABLE users (
     id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(150) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,   -- bcrypt hash, never a plain password
     role ENUM('dean', 'vp', 'director', 'assistant_director', 'department_administrator') NOT NULL,
     -- dean, vp, director, assistant_director: read-only, portfolio-wide (department_id stays NULL)
     -- department_administrator: read/write, scoped to their own department (department_id required)
@@ -75,7 +76,7 @@ CREATE TABLE uploads (
     FOREIGN KEY (department_id) REFERENCES departments(id),
     FOREIGN KEY (uploaded_by) REFERENCES users(id)
 );
- 
+
 
 
 
@@ -85,7 +86,7 @@ INSERT INTO departments (name) VALUES
 ('Retriever Care'),
 ('Engagement and Belonging'),
 ('Dean of Students Office');
- 
+
 
 INSERT INTO metric_types (name, description) VALUES
 ('Students Served', 'Total unique students served by the department'),
@@ -96,17 +97,20 @@ INSERT INTO metric_types (name, description) VALUES
 ('Meal Swipes Donated', 'Number of meal swipes donated by students'),
 ('Meal Swipes Received', 'Number of meal swipes received by students in need'),
 ('Care Team Contacts', 'Number of one-on-one social worker connections');
- 
 
 
-INSERT INTO users (name, email, role, department_id) VALUES
-('Joe Joe', 'jj@umbc.edu', 'dean', NULL),
-('Sample VP', 'vp@umbc.edu', 'vp', NULL),
-('Retriever Essentials Director', 'essentials_dir@umbc.edu', 'director', NULL),
-('Retriever Care Director', 'care_dir@umbc.edu', 'director', NULL),
-('Retriever Essentials Admin', 'essentials_admin@umbc.edu', 'department_administrator', 1),
-('Retriever Care Admin', 'care_admin@umbc.edu', 'department_administrator', 2);
- 
+-- Every seeded account has the development password: 1234
+-- The hash below is bcrypt("1234"). Development only - real accounts
+-- will get their own hashes created through the application.
+INSERT INTO users (name, email, password_hash, role, department_id) VALUES
+('Test Admin', '1234', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'department_administrator', 1),
+('Joe Joe', 'jj@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'dean', NULL),
+('Sample VP', 'vp@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'vp', NULL),
+('Retriever Essentials Director', 'essentials_dir@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'director', NULL),
+('Retriever Care Director', 'care_dir@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'director', NULL),
+('Retriever Essentials Admin', 'essentials_admin@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'department_administrator', 1),
+('Retriever Care Admin', 'care_admin@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'department_administrator', 2);
+
 
 INSERT INTO metrics (department_id, metric_type_id, metric_date, count) VALUES
 (1, 1, '2026-09-01', 300),   -- Retriever Essentials - Students Served
