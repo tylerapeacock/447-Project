@@ -1,10 +1,13 @@
-from datetime import date
+import os 
 from typing import Optional
-
-from fastapi import FastAPI, Depends
+import jwt 
+from jwt.exceptions import InvalidTokenError
+from pwdlib import PasswordHash 
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-
+from datetime import datetime, timedelta, timezone
 from database import get_db
 from models import Department, User, Metric, MetricType
 
@@ -17,7 +20,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY environment variable is not set.")
+# Assumes we're using email and password (not UMBC sign in)
+ALGORITHM = "HS256"
+# Token expiration time in minutes
+TOKEN_EXPIRE_MINUTES = 10 
+password_hasher = PasswordHash.recommended() 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "token")
+# Creates a signed token identifying a user by their database ID
+def access_token_creation(user_id: int) -> str:
+    curr_date = datetime.now(timezone.utc)
+    payload = {
+        "User ID": str(user_id),
+        "Issued At": curr_date, 
+        "Not before": curr_date, 
+        "Expires": curr_date + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+# Validates a toekn and retrieves the corresponding user from MariaDB
+def get_user(token: incoming_token = Depends(oauth2_scheme), db: open_temp_session = Depends(get_db)):
+    error_unauthorized = HTTPException(
+        error_code = status.HTTP_401_UNAUTHORIZED,
+        error_message = "Error: Authentication token is invalid or has expired",
+        headers = {"WWW-Authenticate": "Bearer"})
+    try: 
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload.get("User ID"))
+    except (InvalidTokenErr, ValueError, TypeError):
+        raise error_unauthorized
+    lookup_user_database = db.query(User).filter(User.id == user_id).first()
+    if lookup_user_database is None:
+        raise error_unauthorized
+    return lookup_user_database
 # Temporary data
 # List of departments
 @app.get("/departmentInfo")

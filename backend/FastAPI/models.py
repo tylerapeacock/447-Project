@@ -14,7 +14,7 @@ class User(Base):
     role = Column(Enum("dean", "vp", "director", "assistant_director",
                        "department_administrator"), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
-
+    hashed_password = Column(String(255), nullable=True)
 class MetricType(Base):
     __tablename__ = "metric_types"
     id = Column(Integer, primary_key=True)
