@@ -1,8 +1,11 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import FastAPI, Depends
+import bcrypt
+
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -17,6 +20,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/login")
+def login(creds: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == creds.email).first()
+ 
+    # Same message either way, so nobody can probe which emails exist.
+    if not user or not bcrypt.checkpw(
+        creds.password.encode(), user.password_hash.encode()
+    ):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+ 
+    # password_hash is left out of the response.
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+        "department_id": user.department_id,
+    }
 
 # Temporary data
 # List of departments
