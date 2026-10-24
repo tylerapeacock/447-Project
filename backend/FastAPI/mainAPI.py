@@ -1,4 +1,6 @@
 import os
+import secrets
+from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 import bcrypt
@@ -14,6 +16,14 @@ from database import get_db
 from models import Department, User, Metric, MetricType
 
 app = FastAPI()
+secret_file = Path(".jwt_secret_key")
+if secret_file.exists():
+    secret_key = secret_file .read_text().strip()
+else:
+    secret_key = secrets.token_hex(32)
+    secret_file.write_text(secret_key)
+    print("Generated a new JWT key.")
+os.environ["JWT_SECRET_KEY"] = secret_key
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("JWT_SECRET_KEY environment variable is not set.")
@@ -106,12 +116,12 @@ def getMetrics(
     current_user: User = Depends(get_user),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Metric)
-    if department_id:
+    q = db.query(Metric, MetricType.name).join(MetricType, Metric.metric_type_id == MetricType.id)
+    if department_id is not None:
         q = q.filter(Metric.department_id == department_id)
-    if start:
+    if start is not None:
         q = q.filter(Metric.metric_date >= start)
-    if end:
+    if end is not None:
         q = q.filter(Metric.metric_date <= end)
     return [
         {
@@ -121,27 +131,7 @@ def getMetrics(
             "Date": m.metric_date,
             "Count": m.count,
         }
-        for m in q.all()
-    ]
-
-@app.get("/metrics")
-def getMetrics(start=None, end=None, department_id=None, db: Session = Depends(get_db)):
-    q = db.query(Metric, MetricType.name).join(MetricType)
-    if department_id:
-        q = q.filter(Metric.department_id == department_id)
-    if start:
-        q = q.filter(Metric.metric_date >= start)
-    if end:
-        q = q.filter(Metric.metric_date <= end)
-    return [
-        {
-            "Metric ID": m.id,
-            "Department ID": m.department_id,
-            "Metric Type": type_name,
-            "Date": m.metric_date,
-            "Count": m.count,
-        }
-        for m, type_name in q.all()
+        for metric, metric_type_name in q.all()
     ]
 
 @app.get("/")
