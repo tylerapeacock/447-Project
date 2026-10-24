@@ -65,6 +65,14 @@ def get_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     if lookup_user_database is None:
         raise error_unauthorized
     return lookup_user_database
+read_permissions = {"dean", "vp"}
+read_and_write_permissions = {"director", "assistant_director", "department_administrator"}
+def get_role(user: User) -> str: 
+    curr_role = user.role
+    if hasattr(curr_role,"value"):
+        curr_role = curr_role.value
+    return str(curr_role).lower()
+
 @app.post("/login")
 def login(creds: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == creds.email).first()
@@ -116,6 +124,23 @@ def getMetrics(
     current_user: User = Depends(get_user),
     db: Session = Depends(get_db),
 ):
+    curr_role = get_role(current_user)
+    # Check the date range 
+    if start is not None and end is not None and start > end:
+        raise HTTPException(status_code=422, detail="Start date cannot be after the end date.")
+    # VP and dean can view all departments (read-only)
+    if curr_role in read_permissions:
+        pass
+    # Director, assistant director, and department administrators can read/write, but only to 
+    # their own department. 
+    elif curr_role in read_and_write_permissions:
+        if current_user.department_id is None:
+            raise HTTPException(status_code=403, detail="User hasn't been assigned to a department.")
+        if (department_id is not None and department_id != current_user.department_id):
+            raise HTTPException(status_code=403, detail="User doesn't have permission to view this department.")
+        department_id = current_user.department_id
+    else: 
+        raise HTTPException(status_code=403, detail="User doesn't have read permissions.")
     q = db.query(Metric, MetricType.name).join(MetricType, Metric.metric_type_id == MetricType.id)
     if department_id is not None:
         q = q.filter(Metric.department_id == department_id)
@@ -131,7 +156,7 @@ def getMetrics(
             "Date": m.metric_date,
             "Count": m.count,
         }
-        for metric, metric_type_name in q.all()
+        for m, metric_type_name in q.all()
     ]
 
 @app.get("/")
