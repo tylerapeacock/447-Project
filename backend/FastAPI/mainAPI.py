@@ -125,11 +125,11 @@ def getMetrics(
         q = q.filter(Metric.metric_date <= end)
     return [
         {
-            "Metric ID": m.id,
-            "Department ID": m.department_id,
-            "Metric Type ID": m.metric_type_id,
-            "Date": m.metric_date,
-            "Count": m.count,
+            "Metric ID": metric.id,
+            "Department ID": metric.department_id,
+            "Metric Type": metric_type_name,
+            "Date": metric.metric_date,
+            "Count": metric.count,
         }
         for metric, metric_type_name in q.all()
     ]
