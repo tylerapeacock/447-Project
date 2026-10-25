@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from "react";
+import { setToken } from "./api/api";
 
 const AuthContext = createContext(null);
 const STORAGE_KEY = "retriever_user";
@@ -27,6 +28,7 @@ export function AuthProvider({ children }) {
 
   function logout() {
     setUserState(null);
+    setToken(null);
     try {
       sessionStorage.removeItem(STORAGE_KEY);
     } catch {
