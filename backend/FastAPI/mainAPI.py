@@ -255,7 +255,7 @@ def getMetrics(
             "Date": metric.metric_date,
             "Count": metric.count,
         }
-        for m, metric_type_name in q.all()
+        for metric, metric_type_name in q.all()
     ]
 
 
