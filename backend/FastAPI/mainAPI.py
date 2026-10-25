@@ -12,12 +12,15 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from database import get_db
 from models import Department, User, Metric, MetricType
 
 
+
+
 app = FastAPI()
-# Load a JWT signing key when run 
+# Load a JWT signing key when run
 secret_file = Path(".jwt_secret_key")
 if secret_file.exists():
     secret_key = secret_file.read_text().strip()
@@ -40,6 +43,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -52,6 +56,7 @@ def create_token(user_id: int) -> str:
         "exp" : token_time + timedelta(minutes = TOKEN_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
 
 # Defines validating credentials/token, looking up a user in the database
 def get_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme), db: Session = Depends(get_db)):
@@ -67,22 +72,25 @@ def get_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
         user_id = int(payload["sub"])
     except (jwt.InvalidTokenError, ValueError, TypeError, KeyError):
         raise error_unauthorized
-    # Confirm the user exists in the database 
+    # Confirm the user exists in the database
     lookup_user_database = db.query(User).filter(User.id == user_id).first()
     if lookup_user_database is None:
         raise error_unauthorized
     return lookup_user_database
 
+
 # Sets which roles have read permissions vs both read and write permissions
 read_permissions = {"dean", "vp"}
 read_and_write_permissions = {"director", "assistant_director", "department_administrator"}
 
-# Defines extracting a user's role 
+
+# Defines extracting a user's role
 def get_role(user: User) -> str:
     curr_role = user.role
     if hasattr(curr_role,"value"):
         curr_role = curr_role.value
     return str(curr_role).lower()
+
 
 # Function for checking whether a user has permission to modify data
 def modify_permissions(current_user: User = Depends(get_user),) -> User:
@@ -95,6 +103,7 @@ def modify_permissions(current_user: User = Depends(get_user),) -> User:
         raise HTTPException(status_code=403, detail="User hasn't been assigned to a department.")
     return current_user
 
+
 def metric_dictionary_helper(metric: Metric) -> dict:
     return {
         "Metric ID": metric.id,
@@ -103,6 +112,7 @@ def metric_dictionary_helper(metric: Metric) -> dict:
         "Date": metric.metric_date,
         "Count": metric.count,
     }
+
 
 # Defines checking that a user has access to a departments data and that a metric exists
 # before attempting modifications
@@ -116,6 +126,7 @@ def get_metric_info(metric_id: int, user: User, db: Session) -> Metric:
         raise HTTPException(status_code=403, detail="User doesn't have permission to modify this department.")
     return retrieved_metric
 
+
 # When creating a metric (POST), all fields are required to have a metric id, metric date, and a count
 class CreatingMetric(BaseModel):
     # Rejects the user from adding extra fields
@@ -124,7 +135,8 @@ class CreatingMetric(BaseModel):
     metric_date: date
     count: int
 
-# When updating a metric (PUT), not all fields need to be update. Allow some fields to be NONE. 
+
+# When updating a metric (PUT), not all fields need to be update. Allow some fields to be NONE.
 class UpdatingMetric(BaseModel):
     metric_type_id: Optional[int] = None
     metric_date: Optional[date] = None
@@ -160,6 +172,7 @@ def create_new_metric(metric_data: CreatingMetric, current_user: User = Depends(
     # Uses the dictionary helper
     return metric_dictionary_helper(new_metric)
 
+
 # Defines validating whether metric can be updated, and updates it accordingly
 @app.put("/metrics/{metric_id}")
 def update_metric(metric_id: int, metric_info: UpdatingMetric, current_user: User = Depends(modify_permissions), db: Session = Depends(get_db)):
@@ -185,6 +198,7 @@ def update_metric(metric_id: int, metric_info: UpdatingMetric, current_user: Use
         raise HTTPException(status_code = 422, detail = "Error: update failed, value(s) voilated a database constraint.")
     return metric_dictionary_helper(update_metric)
 
+
 # Defines whether a metric can be deleted
 @app.delete("/metrics/{metric_id}")
 def delete_metric(metric_id: int, current_user: User = Depends(modify_permissions), db: Session = Depends(get_db)):
@@ -196,6 +210,7 @@ def delete_metric(metric_id: int, current_user: User = Depends(modify_permission
     db.commit()
     return {"message": "Metric deleted successfully."}
 
+
 # Temporary data
 # List of departments
 @app.get("/departmentInfo")
@@ -206,6 +221,8 @@ def getDepartments(current_user: User = Depends(get_user), db: Session = Depends
     ]
 
 
+
+
 # List of user information
 @app.get("/userInfo")
 def getUsers(current_user: User = Depends(get_user), db: Session = Depends(get_db)):
@@ -214,6 +231,7 @@ def getUsers(current_user: User = Depends(get_user), db: Session = Depends(get_d
         for u in db.query(User).all()
     ]
 
+
 # Metrics with optional filters, for the dashboard's calendar/date picker
 @app.get("/metrics")
 def getMetrics(
@@ -221,8 +239,7 @@ def getMetrics(
     end: Optional[date] = None,
     department_id: Optional[int] = None,
     current_user: User = Depends(get_user),
-    db: Session = Depends(get_db),
-):
+    db: Session = Depends(get_db)):
     curr_role = get_role(current_user)
     # Check the date range
     if start is not None and end is not None and start > end:
@@ -257,7 +274,70 @@ def getMetrics(
         }
         for metric, metric_type_name in q.all()
     ]
-
+# Defines a basic statistical analysis functionality
+@app.get("/metrics/statistics")
+def get_metric_stats(
+    # Can contain an int/date or be defaulted to None
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    department_id: Optional[int] = None,
+    metric_type_id: Optional[int] = None,
+    current_user: User = Depends(get_user),
+    db: Session = Depends(get_db)):
+    curr_role = get_role(current_user)
+    # Check the date range
+    if start_date is not None and end_date is not None and start_date > end_date:
+        raise HTTPException(status_code=422, detail=" Error: Start date cannot be after the end date.")
+    # Dean and VP can view metrics for all departments
+    if curr_role in read_permissions:
+        pass
+    # Everyone else can only view metrics for their own departments
+    elif curr_role in read_and_write_permissions:
+        if current_user.department_id is None:
+            raise HTTPException(status_code = 403, detail = "Error: User hasn't been assigned to a department.")
+        if (department_id is not None and department_id != current_user.department_id):
+            raise HTTPException(status_code = 403, detail = "Error: User doesn't have permission to view this department")
+        department_id = current_user.department_id
+    else:
+        raise HTTPException(status_code = 403, detail = "Error: User doesn't have permission to view statistics.")
+    # Constructs a database query for:
+        # - count how many metric records match the filters
+        # - sum for adding together the values of the matching records
+        # - average for calculating the mean values of matching records
+        # - min returns the smallest value
+        # - max returns the largest value
+    database_query = db.query(func.count(Metric.id).label("record_count"),
+        func.sum(Metric.count).label("record_total"),
+        func.avg(Metric.count).label("record_average"),
+        func.min(Metric.count).label("record_minimum"),
+        func.max(Metric.count).label("record_maximum"))
+    # Filter by start and end date (if provided)
+    if start_date is not None:
+        database_query = database_query.filter(Metric.metric_date >= start_date)
+    if end_date is not None:
+        database_query = database_query.filter(Metric.metric_date <= end_date)
+    # Filter by department
+    if department_id is not None:
+        database_query = database_query.filter(Metric.department_id == department_id)
+    # Filter by metric type
+    if metric_type_id is not None:
+        database_query = database_query.filter(Metric.metric_type_id == metric_type_id)
+   
+    query_result = database_query.one()
+    record_average = query_result.record_average
+    if record_average is not None:
+        record_average = float(record_average)
+    return {
+        "Metric Type ID": metric_type_id,
+        "Department ID": department_id,
+        "Start Date": start_date,
+        "End Date": end_date,
+        "Record Count": query_result.record_count,
+        "Record Total": query_result.record_total or 0,
+        "Record Average": record_average,
+        "Record Minimum": query_result.record_minimum,
+        "Record Maximum": query_result.record_maximum
+    }  
 
 @app.get("/")
 def home():
