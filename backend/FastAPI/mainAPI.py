@@ -238,8 +238,11 @@ def getMetrics(
     start: Optional[date] = None,
     end: Optional[date] = None,
     department_id: Optional[int] = None,
+    sort_by: str = "Metric Date",
+    current_order: str = "descending",
     current_user: User = Depends(get_user),
     db: Session = Depends(get_db)):
+
     curr_role = get_role(current_user)
     # Check the date range
     if start is not None and end is not None and start > end:
@@ -264,12 +267,32 @@ def getMetrics(
         q = q.filter(Metric.metric_date >= start)
     if end is not None:
         q = q.filter(Metric.metric_date <= end)
+    sort_col = {
+        "Metric ID": Metric.id,
+        "Metric Date": Metric.metric_date, 
+        "Department ID": Metric.department_id, 
+        "Metric Type ID": Metric.metric_type_id,
+        "Count": Metric.count 
+    } 
+    if sort_by not in sort_col and curr_role in read_and_write_permissions:
+        raise HTTPException(status_code = 422, detail = "Error: Field to sort by is invalid. Possible fields to sort by include: Metric ID, Metric Date, Metric Type ID, Count")
+    if sort_by not in sort_col and curr_role in write_permissions:
+        raise HTTPException(status_code = 422, detail = "Error: Field to sort by is invalid. Possible fields to sort by include: Metric ID, Metric Date, Department ID, Metric Type ID, Count")
+    if sort_by == "Department ID" and curr_role not in read_permissions:
+        raise HTTPException(status_code = 403, detail = "Error: You don't have permission to sort by department ID.")
+
+    if current_order.lower() == "descending":
+        q = q.order_by(sort_col[sort_by].desc())
+    elif current_order.lower() == "ascending":
+        q = q.order_by(sort_col[sort_by].asc())
+    else:
+        raise HTTPException(status_code = 422, detail = "Error: Must sort by ascending or descending order.")
     return [
         {
             "Metric ID": metric.id,
             "Department ID": metric.department_id,
             "Metric Type": metric_type_name,
-            "Date": metric.metric_date,
+            "Metric Date": metric.metric_date,
             "Count": metric.count,
         }
         for metric, metric_type_name in q.all()
