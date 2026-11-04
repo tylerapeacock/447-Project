@@ -74,3 +74,28 @@
   min-width: 0;
   text-align: left;     /* important, see below */
 }
+
+.source-toggle {
+  display: inline-flex;
+  margin-bottom: 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.source-button {
+  padding: 7px 14px;
+  font-size: 0.9rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.source-button.active {
+  background: #1f2937;
+  color: #ffffff;
+}
+
+.chart-error {
+  color: #b91c1c;
+}
