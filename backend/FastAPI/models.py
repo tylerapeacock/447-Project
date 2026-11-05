@@ -41,3 +41,27 @@ class Upload(Base):
     upload_date = Column(TIMESTAMP, server_default=func.now())
     row_count = Column(Integer)
     status = Column(Enum("success", "partial", "failed"), default="success")
+
+class StudentToken(Base):
+    __tablename__ = "student_tokens"
+    id = Column(Integer, primary_key=True)
+    token = Column(String(64), unique=True, nullable=False)
+    class_year = Column(String(20))
+    enrollment_status = Column(String(20))
+    first_seen = Column(Date)
+
+class ServiceEvent(Base):
+    __tablename__ = "service_events"
+    id = Column(Integer, primary_key=True)
+    student_token_id = Column(Integer, ForeignKey("student_tokens.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    metric_type_id = Column(Integer, ForeignKey("metric_types.id"), nullable=False)
+    event_date = Column(Date, nullable=False)
+
+class Enrollment(Base):
+    __tablename__ = "enrollment"
+    id = Column(Integer, primary_key=True)
+    term = Column(String(20), nullable=False)
+    category = Column(String(50), nullable=False)
+    value = Column(String(50), nullable=False)
+    headcount = Column(Integer, nullable=False)
