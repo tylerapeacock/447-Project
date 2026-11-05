@@ -9,7 +9,7 @@ import { useAuth } from "./AuthContext";
 function pivotMetrics(rows) {
   const byDate = {};
   for (const row of rows) {
-    const date = row["Date"];
+    const date = row["Metric Date"];
     if (!byDate[date]) byDate[date] = { Date: date };
     byDate[date][row["Metric Type"]] = row["Count"];
   }
