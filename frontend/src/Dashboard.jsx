@@ -41,12 +41,6 @@ function Dashboard() {
       <header className="page-header">
         <img className="umbc-logo" src="/UMBCLogo.jpeg" alt="logo" />
         <div className="title">Retriever Dashboard</div>
-        <div className="user-menu">
-          <span className="user-name">{user?.name}</span>
-          <button className="logout-button" onClick={logout}>
-            Log out
-          </button>
-        </div>
       </header>
  
       <div className="dashboard-box">
@@ -59,20 +53,11 @@ function Dashboard() {
           >
             Stored metrics
           </button>
-          <button
-            type="button"
-            className={source === "upload" ? "source-button active" : "source-button"}
-            aria-pressed={source === "upload"}
-            onClick={() => setSource("upload")}
-          >
-            Upload a CSV
-          </button>
+
         </div>
  
         <div className="dashboard-row">
-          <aside className="stats-panel">
-            <Card />
-          </aside>
+
  
           <div className="chart-cell">
             {source === "stored" ? (
@@ -97,9 +82,7 @@ function Dashboard() {
             )}
           </div>
  
-          <aside className="stats-panel">
-            <Card />
-          </aside>
+
         </div>
         <ReachChart />
       </div>
