@@ -1,10 +1,12 @@
 import "./Dashboard.css";
+import ReachChart from "./ReachChart.jsx";
 import Card from "./Card.jsx";
 import "./Card.css";
 import { useState, useEffect } from "react";
 import CsvChart from "./CsvChart.jsx";
 import { getMetrics } from "./api/api";
 import { useAuth } from "./AuthContext";
+
 
 function pivotMetrics(rows) {
   const byDate = {};
@@ -99,6 +101,7 @@ function Dashboard() {
             <Card />
           </aside>
         </div>
+        <ReachChart />
       </div>
     </div>
   );

@@ -12,9 +12,9 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, distinct, case
 from database import get_db
-from models import Department, User, Metric, MetricType
+from models import Department, User, Metric, MetricType, ServiceEvent, Enrollment
 
 
 
@@ -365,3 +365,196 @@ def get_metric_stats(
 @app.get("/")
 def home():
     return {"message": "Hello World"}
+
+
+
+SMALL_CELL_MIN = int(os.environ.get("SMALL_CELL_MIN", "5"))
+ 
+ 
+def is_small(value):
+    return value is not None and 0 < value < SMALL_CELL_MIN
+ 
+ 
+def suppress_small(value, label, suppressed):
+    """Return the count, or None (and note why) if it's a small, identifying group."""
+    if is_small(value):
+        suppressed.append(label)
+        return None
+    return value
+ 
+ 
+def reach_scope(current_user: User):
+    """None for portfolio-wide roles, else the user's own department id."""
+    curr_role = get_role(current_user)
+    if curr_role in read_permissions:
+        return None
+    if curr_role in read_and_write_permissions:
+        if current_user.department_id is None:
+            raise HTTPException(status_code=403, detail="User hasn't been assigned to a department.")
+        return current_user.department_id
+    raise HTTPException(status_code=403, detail="User doesn't have read permissions.")
+ 
+ 
+def filter_events(query, department_id, start, end):
+    if department_id is not None:
+        query = query.filter(ServiceEvent.department_id == department_id)
+    if start is not None:
+        query = query.filter(ServiceEvent.event_date >= start)
+    if end is not None:
+        query = query.filter(ServiceEvent.event_date <= end)
+    return query
+ 
+ 
+def check_range(start, end):
+    if start is not None and end is not None and start > end:
+        raise HTTPException(status_code=422, detail="Start date cannot be after the end date.")
+ 
+ 
+# Unique students, repeat visitors, and cross-unit overlap. Reads
+# service_events, not metrics: aggregate counts can't tell 300 visits
+# from 300 people.
+@app.get("/reach")
+def getReach(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    term: Optional[str] = None,
+    current_user: User = Depends(get_user),
+    db: Session = Depends(get_db),
+):
+    check_range(start, end)
+    department_id = reach_scope(current_user)
+ 
+    def scoped(query):
+        return filter_events(query, department_id, start, end)
+ 
+    unique_students = scoped(
+        db.query(func.count(distinct(ServiceEvent.student_token_id)))
+    ).scalar()
+ 
+    total_visits = scoped(db.query(func.count(ServiceEvent.id))).scalar()
+ 
+    repeat_visitors = (
+        scoped(db.query(ServiceEvent.student_token_id))
+        .group_by(ServiceEvent.student_token_id)
+        .having(func.count(ServiceEvent.id) > 1)
+        .count()
+    )
+ 
+    # Overlap only makes sense across the whole portfolio. A department-scoped
+    # user only sees their own unit's events, and shouldn't learn about other
+    # units through this number.
+    multi_unit = None
+    if department_id is None:
+        multi_unit = (
+            scoped(db.query(ServiceEvent.student_token_id))
+            .group_by(ServiceEvent.student_token_id)
+            .having(func.count(distinct(ServiceEvent.department_id)) > 1)
+            .count()
+        )
+ 
+    share_of_enrollment = None
+    if term is not None:
+        total = (
+            db.query(Enrollment.headcount)
+            .filter(
+                Enrollment.term == term,
+                Enrollment.category == "all",
+                Enrollment.value == "all",
+            )
+            .scalar()
+        )
+        if total:
+            share_of_enrollment = round(unique_students / total, 4)
+ 
+    suppressed = []
+    shown_unique = suppress_small(unique_students, "Unique Students", suppressed)
+ 
+    # share x headcount gives back the unique count, so hide the share
+    # whenever the count itself is hidden.
+    if shown_unique is None and share_of_enrollment is not None:
+        share_of_enrollment = None
+        suppressed.append("Share Of Enrollment")
+ 
+    return {
+        "Scope": "portfolio" if department_id is None else "department",
+        "Department ID": department_id,
+        "Unique Students": shown_unique,
+        "Total Visits": suppress_small(total_visits, "Total Visits", suppressed),
+        "Repeat Visitors": suppress_small(repeat_visitors, "Repeat Visitors", suppressed),
+        "Served By Multiple Units": suppress_small(multi_unit, "Served By Multiple Units", suppressed),
+        "Share Of Enrollment": share_of_enrollment,  # a fraction: 0.0004 means 0.04%
+        "Suppressed": suppressed,
+        "Suppression Threshold": SMALL_CELL_MIN,
+    }
+ 
+ 
+# Unique students per unit, split into one-time and returning (2+ visits to
+# that unit). Every unit in the user's scope is listed, including units with
+# no visits yet, so a missing bar means "nobody", not "not loaded".
+@app.get("/reach/by-unit")
+def getReachByUnit(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    current_user: User = Depends(get_user),
+    db: Session = Depends(get_db),
+):
+    check_range(start, end)
+    department_id = reach_scope(current_user)
+ 
+    # One row per (unit, student) with that student's visit count at the unit.
+    per_student = (
+        filter_events(
+            db.query(
+                ServiceEvent.department_id.label("department_id"),
+                ServiceEvent.student_token_id.label("student"),
+                func.count(ServiceEvent.id).label("visits"),
+            ),
+            department_id,
+            start,
+            end,
+        )
+        .group_by(ServiceEvent.department_id, ServiceEvent.student_token_id)
+        .subquery()
+    )
+ 
+    counts = {
+        row.department_id: (row.unique_students, int(row.returning or 0))
+        for row in db.query(
+            per_student.c.department_id,
+            func.count().label("unique_students"),
+            func.sum(case((per_student.c.visits > 1, 1), else_=0)).label("returning"),
+        ).group_by(per_student.c.department_id)
+    }
+ 
+    departments = db.query(Department).order_by(Department.id)
+    if department_id is not None:
+        departments = departments.filter(Department.id == department_id)
+ 
+    units = []
+    for d in departments:
+        unique_students, returning = counts.get(d.id, (0, 0))
+        one_time = unique_students - returning
+ 
+        if is_small(unique_students):
+            # The whole unit is a small group: hide everything about it.
+            shown = (None, None, None)
+            hidden = "all"
+        elif is_small(returning) or is_small(one_time):
+            # The total is safe, but the split would expose a small group
+            # (and either part gives the other back by subtraction).
+            shown = (unique_students, None, None)
+            hidden = "split"
+        else:
+            shown = (unique_students, returning, one_time)
+            hidden = None
+ 
+        units.append({
+            "Department ID": d.id,
+            "Department": d.name,
+            "Unique Students": shown[0],
+            "Returning Students": shown[1],
+            "One-time Students": shown[2],
+            "Hidden": hidden,
+        })
+ 
+    return {"Units": units, "Suppression Threshold": SMALL_CELL_MIN}

@@ -65,3 +65,19 @@ export async function getMetrics({ start, end, departmentId } = {}) {
 export async function getMetricTypes() {
   return request("/metricTypes", "metric types");
 }
+
+
+export async function getReach({ start, end, term } = {}) {
+  const params = new URLSearchParams();
+  if (start) params.append("start", start);
+  if (end) params.append("end", end);
+  if (term) params.append("term", term);
+  return request(`/reach?${params}`, "reach");
+}
+
+export async function getReachByUnit({ start, end } = {}) {
+  const params = new URLSearchParams();
+  if (start) params.append("start", start);
+  if (end) params.append("end", end);
+  return request(`/reach/by-unit?${params}`, "reach by unit");
+}
