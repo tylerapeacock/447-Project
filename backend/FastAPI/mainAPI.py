@@ -1,4 +1,6 @@
 import os
+import csv
+import io 
 import secrets
 from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
@@ -6,13 +8,13 @@ from typing import Optional
 import bcrypt
 import jwt
 from jwt import InvalidTokenError
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
-from sqlalchemy import func, distinct, case
+from sqlalchemy import func, distinct, case, insert
 from database import get_db
 from models import Department, User, Metric, MetricType, ServiceEvent, Enrollment
 
@@ -558,3 +560,74 @@ def getReachByUnit(
         })
  
     return {"Units": units, "Suppression Threshold": SMALL_CELL_MIN}
+
+CSV_COLUMNS = {"metric_type", "metric_date", "count"}
+@app.post("/metrics/upload")
+def upload_metrics(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_user),
+    db: Session = Depends(get_db)):
+    # Validate user permissions, department assignments, and file type
+    if get_role(current_user) not in read_and_write_permissions:
+        raise HTTPException(status_code=403, detail="Error: User doesn't have permissions to upload metrics.")
+    if current_user.department_id is None:
+        raise HTTPException(status_code=403, detail="Error: User hasn't been assigned to a department.")
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Error: Invalid file type, must upload a CSV file.")
+    # Ensure CSV file is UTF-8 encoded to prevent errors when reading files 
+    try:
+        text = file.file.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Error: CSV file must be UTF-8 encoded.")
+    # Read CSV file and check that it has required columns 
+    read_CSV = csv.DictReader(io.StringIO(text))
+    if not read_CSV.fieldnames:
+        raise HTTPException(status_code=400, detail="Error: CSV file is missing required headers.")
+    headers = []
+    for h in read_CSV.fieldnames:
+        headers.append(h.strip().lower())
+    read_CSV.fieldnames = headers
+    if not CSV_COLUMNS.issubset(read_CSV.fieldnames):
+        raise HTTPException(status_code=400, detail="Error: CSV file is missing required columns.")
+    # Retrieves metric type ID and maps it to a name for validation 
+    get_type_id = {}
+    metric_types = db.query(MetricType.id, MetricType.name).all()
+    for metric_id, name in metric_types:
+        get_type_id[name.strip().lower()] = metric_id
+    # Track what passes and fails 
+    new_metrics_list = []
+    errors_list = []
+    for line_num, row in enumerate(read_CSV, start = 2): 
+        try:
+            # Extract each row and remove surrounding whitespace
+            type_name_string = row["metric_type"].strip()
+            metric_date_string = row["metric_date"].strip()
+            count_string = row["count"].strip()
+            # Convert metric_date_string into a date and count_string into an integer
+            # (must follow %m/%d/%Y format when uploading CSV files)
+            metric_date = datetime.strptime(metric_date_string, "%m/%d/%Y").date()
+            count = int(count_string)
+            if count < 0:
+                errors_list.append(f"Error: Line {line_num}: count can't be negative.")
+                continue
+        # Check and reject possible errors in CSV file formatting
+        except (ValueError, TypeError, AttributeError):
+            errors_list.append(f"Error: Line {line_num}: invalid or missing value.")
+            continue
+        # Check that the metric type exists
+        type_id = get_type_id.get(type_name_string.lower())
+        if type_id is None:
+            errors_list.append(f"Error: Line {line_num}: metric type '{type_name_string}' doesn't exist.")
+            continue
+        new_metrics_list.append(Metric(department_id = current_user.department_id, metric_type_id = type_id, metric_date = metric_date, count = count))
+    if errors_list:
+        raise HTTPException(status_code=422, detail={"message": "No rows were imported.", "errors": errors_list})
+    if not new_metrics_list:
+        raise HTTPException(status_code=422, detail="Error: CSV contains no data rows.")
+    try:
+        db.add_all(new_metrics_list)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="Error: Some of these metrics already exist.")
+    return {"Success message": "Metrics imported successfully.", "Number of rows uploaded": len(new_metrics_list)}
