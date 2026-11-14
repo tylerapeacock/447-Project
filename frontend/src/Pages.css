@@ -99,6 +99,96 @@
   font-weight: 500;
 }
 
+.page-text code {
+  padding: 1px 5px;
+  font-size: 0.85em;
+  background: #f3f1ec;
+  border-radius: 3px;
+}
+
+/* ---------- Upload ---------- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.upload-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.upload-choose {
+  position: relative;
+  display: inline-block;
+}
+
+/* The real file input is hidden, so show keyboard focus on its label. */
+.upload-choose:focus-within {
+  outline: 2px solid #1c1a17;
+  outline-offset: 2px;
+}
+
+.upload-filename {
+  font-size: 0.9rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.upload-preview-note {
+  margin-bottom: 8px;
+  color: #3d3a35;
+}
+
+.upload-button {
+  margin-top: 16px;
+}
+
+.upload-result {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-left: 3px solid;
+  background: #f7f6f3;
+}
+
+.upload-result-success { border-color: #2f6b2f; }
+.upload-result-partial { border-color: #b26b00; }
+.upload-result-failed  { border-color: #9a2b2b; }
+
+.upload-result-headline {
+  margin: 0;
+  font-weight: 600;
+}
+
+.upload-result-detail {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
+  color: #3d3a35;
+}
+
+.upload-errors {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 0.88rem;
+}
+
+.upload-errors li + li {
+  margin-top: 4px;
+}
+
+.upload-error-row {
+  font-weight: 600;
+}
+
 @media (max-width: 760px) {
   .page {
     padding: 20px 16px 48px;
