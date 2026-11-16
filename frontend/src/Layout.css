@@ -1,0 +1,147 @@
+.app-shell {
+    display: flex;
+    min-height: 100vh;
+  }
+  
+  /* z-index keeps the sidebar clickable above any absolutely positioned
+     background element inside the pages. */
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    box-sizing: border-box; /* keeps the padding inside 100vh, so Log out stays on screen */
+    width: 220px;
+    height: 100vh;
+    padding: 20px 14px;
+    background: #000000;
+    border-right: 3px solid #fdb515;
+    color: #ffffff;
+  }
+  
+  .sidebar-brand {
+    padding: 4px 10px 22px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fdb515;
+  }
+  
+  .sidebar-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  
+  .sidebar-link {
+    display: block;
+    padding: 9px 10px;
+    border-radius: 4px;
+    color: #d6d2c9;
+    font-size: 0.92rem;
+    text-decoration: none;
+  }
+  
+  .sidebar-link:hover {
+    background: #1c1a17;
+    color: #ffffff;
+  }
+  
+  .sidebar-link.active {
+    background: #fdb515;
+    color: #000000;
+    font-weight: 600;
+  }
+  
+  .sidebar-footer {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid #2e2b27;
+  }
+  
+  .sidebar-user {
+    padding: 0 10px 10px;
+    font-size: 0.85rem;
+    color: #b8b2a8;
+  }
+  
+  .sidebar-logout {
+    width: 100%;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 0.9rem;
+    text-align: left;
+    color: #ffffff;
+    background: transparent;
+    border: 1px solid #4a4640;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  .sidebar-logout:hover {
+    border-color: #fdb515;
+    color: #fdb515;
+  }
+  
+  .sidebar-link:focus-visible,
+  .sidebar-logout:focus-visible {
+    outline: 2px solid #fdb515;
+    outline-offset: 2px;
+  }
+  
+  /* position: relative contains any absolute page background to this area */
+  .app-main {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  /* Narrow screens: the sidebar becomes a bar across the top. */
+  @media (max-width: 760px) {
+    .app-shell {
+      flex-direction: column;
+    }
+  
+    .sidebar {
+      position: static;
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      width: auto;
+      height: auto;
+      padding: 10px 12px;
+      border-right: none;
+      border-bottom: 3px solid #fdb515;
+    }
+  
+    .sidebar-brand {
+      padding: 0 8px 0 0;
+    }
+  
+    .sidebar-links {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+  
+    .sidebar-footer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 0 auto;
+      padding: 0;
+      border: none;
+    }
+  
+    .sidebar-user {
+      padding: 0;
+    }
+  
+    .sidebar-logout {
+      width: auto;
+    }
+  }

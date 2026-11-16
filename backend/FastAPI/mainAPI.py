@@ -1,4 +1,6 @@
 import os
+import csv
+import io 
 import secrets
 from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
@@ -6,15 +8,16 @@ from typing import Optional
 import bcrypt
 import jwt
 from jwt import InvalidTokenError
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, distinct, case, insert
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from database import get_db
-from models import Department, User, Metric, MetricType
+from models import Department, User, Metric, MetricType, ServiceEvent, Enrollment, Upload
 
 
 
@@ -276,7 +279,7 @@ def getMetrics(
     } 
     if sort_by not in sort_col and curr_role in read_and_write_permissions:
         raise HTTPException(status_code = 422, detail = "Error: Field to sort by is invalid. Possible fields to sort by include: Metric ID, Metric Date, Metric Type ID, Count")
-    if sort_by not in sort_col and curr_role in write_permissions:
+    if sort_by not in sort_col and curr_role in read_permissions:
         raise HTTPException(status_code = 422, detail = "Error: Field to sort by is invalid. Possible fields to sort by include: Metric ID, Metric Date, Department ID, Metric Type ID, Count")
     if sort_by == "Department ID" and curr_role not in read_permissions:
         raise HTTPException(status_code = 403, detail = "Error: You don't have permission to sort by department ID.")
@@ -365,3 +368,402 @@ def get_metric_stats(
 @app.get("/")
 def home():
     return {"message": "Hello World"}
+
+
+
+SMALL_CELL_MIN = int(os.environ.get("SMALL_CELL_MIN", "5"))
+ 
+ 
+def is_small(value):
+    return value is not None and 0 < value < SMALL_CELL_MIN
+ 
+ 
+def suppress_small(value, label, suppressed):
+    """Return the count, or None (and note why) if it's a small, identifying group."""
+    if is_small(value):
+        suppressed.append(label)
+        return None
+    return value
+ 
+ 
+def reach_scope(current_user: User):
+    """None for portfolio-wide roles, else the user's own department id."""
+    curr_role = get_role(current_user)
+    if curr_role in read_permissions:
+        return None
+    if curr_role in read_and_write_permissions:
+        if current_user.department_id is None:
+            raise HTTPException(status_code=403, detail="User hasn't been assigned to a department.")
+        return current_user.department_id
+    raise HTTPException(status_code=403, detail="User doesn't have read permissions.")
+ 
+ 
+def filter_events(query, department_id, start, end):
+    if department_id is not None:
+        query = query.filter(ServiceEvent.department_id == department_id)
+    if start is not None:
+        query = query.filter(ServiceEvent.event_date >= start)
+    if end is not None:
+        query = query.filter(ServiceEvent.event_date <= end)
+    return query
+ 
+ 
+def check_range(start, end):
+    if start is not None and end is not None and start > end:
+        raise HTTPException(status_code=422, detail="Start date cannot be after the end date.")
+ 
+ 
+# Unique students, repeat visitors, and cross-unit overlap. Reads
+# service_events, not metrics: aggregate counts can't tell 300 visits
+# from 300 people.
+@app.get("/reach")
+def getReach(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    term: Optional[str] = None,
+    current_user: User = Depends(get_user),
+    db: Session = Depends(get_db),
+):
+    check_range(start, end)
+    department_id = reach_scope(current_user)
+ 
+    def scoped(query):
+        return filter_events(query, department_id, start, end)
+ 
+    unique_students = scoped(
+        db.query(func.count(distinct(ServiceEvent.student_token_id)))
+    ).scalar()
+ 
+    total_visits = scoped(db.query(func.count(ServiceEvent.id))).scalar()
+ 
+    repeat_visitors = (
+        scoped(db.query(ServiceEvent.student_token_id))
+        .group_by(ServiceEvent.student_token_id)
+        .having(func.count(ServiceEvent.id) > 1)
+        .count()
+    )
+ 
+    # Overlap only makes sense across the whole portfolio. A department-scoped
+    # user only sees their own unit's events, and shouldn't learn about other
+    # units through this number.
+    multi_unit = None
+    if department_id is None:
+        multi_unit = (
+            scoped(db.query(ServiceEvent.student_token_id))
+            .group_by(ServiceEvent.student_token_id)
+            .having(func.count(distinct(ServiceEvent.department_id)) > 1)
+            .count()
+        )
+ 
+    share_of_enrollment = None
+    if term is not None:
+        total = (
+            db.query(Enrollment.headcount)
+            .filter(
+                Enrollment.term == term,
+                Enrollment.category == "all",
+                Enrollment.value == "all",
+            )
+            .scalar()
+        )
+        if total:
+            share_of_enrollment = round(unique_students / total, 4)
+ 
+    suppressed = []
+    shown_unique = suppress_small(unique_students, "Unique Students", suppressed)
+ 
+    # share x headcount gives back the unique count, so hide the share
+    # whenever the count itself is hidden.
+    if shown_unique is None and share_of_enrollment is not None:
+        share_of_enrollment = None
+        suppressed.append("Share Of Enrollment")
+ 
+    return {
+        "Scope": "portfolio" if department_id is None else "department",
+        "Department ID": department_id,
+        "Unique Students": shown_unique,
+        "Total Visits": suppress_small(total_visits, "Total Visits", suppressed),
+        "Repeat Visitors": suppress_small(repeat_visitors, "Repeat Visitors", suppressed),
+        "Served By Multiple Units": suppress_small(multi_unit, "Served By Multiple Units", suppressed),
+        "Share Of Enrollment": share_of_enrollment,  # a fraction: 0.0004 means 0.04%
+        "Suppressed": suppressed,
+        "Suppression Threshold": SMALL_CELL_MIN,
+    }
+ 
+ 
+# Unique students per unit, split into one-time and returning (2+ visits to
+# that unit). Every unit in the user's scope is listed, including units with
+# no visits yet, so a missing bar means "nobody", not "not loaded".
+@app.get("/reach/by-unit")
+def getReachByUnit(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    current_user: User = Depends(get_user),
+    db: Session = Depends(get_db),
+):
+    check_range(start, end)
+    department_id = reach_scope(current_user)
+ 
+    # One row per (unit, student) with that student's visit count at the unit.
+    per_student = (
+        filter_events(
+            db.query(
+                ServiceEvent.department_id.label("department_id"),
+                ServiceEvent.student_token_id.label("student"),
+                func.count(ServiceEvent.id).label("visits"),
+            ),
+            department_id,
+            start,
+            end,
+        )
+        .group_by(ServiceEvent.department_id, ServiceEvent.student_token_id)
+        .subquery()
+    )
+ 
+    counts = {
+        row.department_id: (row.unique_students, int(row.returning or 0))
+        for row in db.query(
+            per_student.c.department_id,
+            func.count().label("unique_students"),
+            func.sum(case((per_student.c.visits > 1, 1), else_=0)).label("returning"),
+        ).group_by(per_student.c.department_id)
+    }
+ 
+    departments = db.query(Department).order_by(Department.id)
+    if department_id is not None:
+        departments = departments.filter(Department.id == department_id)
+ 
+    units = []
+    for d in departments:
+        unique_students, returning = counts.get(d.id, (0, 0))
+        one_time = unique_students - returning
+ 
+        if is_small(unique_students):
+            # The whole unit is a small group: hide everything about it.
+            shown = (None, None, None)
+            hidden = "all"
+        elif is_small(returning) or is_small(one_time):
+            # The total is safe, but the split would expose a small group
+            # (and either part gives the other back by subtraction).
+            shown = (unique_students, None, None)
+            hidden = "split"
+        else:
+            shown = (unique_students, returning, one_time)
+            hidden = None
+ 
+        units.append({
+            "Department ID": d.id,
+            "Department": d.name,
+            "Unique Students": shown[0],
+            "Returning Students": shown[1],
+            "One-time Students": shown[2],
+            "Hidden": hidden,
+        })
+ 
+    return {"Units": units, "Suppression Threshold": SMALL_CELL_MIN}
+
+MAX_UPLOAD_BYTES = 2 * 1024 * 1024      # 2 MB
+MAX_UPLOAD_ROWS = 5000
+MAX_REPORTED_ERRORS = 50
+MAX_COUNT = 2_147_483_647               # largest value an INT column holds
+REQUIRED_COLUMNS = ("metric_type", "metric_date", "count")
+
+
+def is_whole_number(text):
+    # isascii() matters: "²".isdigit() is True, but int("²") crashes.
+    return text.isascii() and text.isdigit()
+
+
+def parse_metric_date(text):
+    """Accept 2026-09-01, and 9/1/2026 because Excel rewrites dates that way."""
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+@app.post("/metrics/upload")
+def upload_metrics_csv(
+    file: UploadFile = File(...),
+    current_user: User = Depends(modify_permissions),
+    db: Session = Depends(get_db),
+):
+    raw = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File is larger than 2 MB. Split it into smaller files.")
+
+    filename = (file.filename or "upload.csv")[:255]
+    department_id = current_user.department_id
+    errors = []
+
+    def record_upload(status, rows_in_file):
+        upload = Upload(
+            department_id=department_id,
+            uploaded_by=current_user.id,
+            filename=filename,
+            row_count=rows_in_file,
+            status=status,
+        )
+        db.add(upload)
+        return upload
+
+    def summary(upload, rows_in_file, added=0, updated=0, unchanged=0):
+        rejected_rows = len({e["Row"] for e in errors})
+        return {
+            "Upload ID": upload.id,
+            "Filename": filename,
+            "Status": upload.status,
+            "Rows In File": rows_in_file,
+            "Rows Saved": added + updated + unchanged,
+            "Rows Added": added,
+            "Rows Updated": updated,
+            "Rows Unchanged": unchanged,
+            "Rows Rejected": rejected_rows,
+            "Errors": errors[:MAX_REPORTED_ERRORS],
+            "Errors Truncated": len(errors) > MAX_REPORTED_ERRORS,
+        }
+
+    def fail_whole_file(message, rows_in_file=0):
+        # Nothing is saved to metrics, but the attempt is recorded.
+        errors.append({"Row": 1, "Message": message})
+        upload = record_upload("failed", rows_in_file)
+        db.commit()
+        db.refresh(upload)
+        return summary(upload, rows_in_file)
+
+    # Excel can add an invisible byte-order mark; utf-8-sig strips it.
+    # Older Excel saves non-UTF-8 text; latin-1 reads anything.
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    headers = [(h or "").strip().lower() for h in (reader.fieldnames or [])]
+    missing = [c for c in REQUIRED_COLUMNS if c not in headers]
+    if missing:
+        return fail_whole_file(
+            f"Missing column(s): {', '.join(missing)}. "
+            "The first row must be: metric_type,metric_date,count"
+        )
+    reader.fieldnames = headers  # so rows are read with the cleaned-up names
+
+    metric_types = {
+        t.name.strip().lower(): t.id for t in db.query(MetricType).all()
+    }
+    today_date = date.today()
+
+    valid = {}        # (metric_type_id, metric_date) -> (count, csv_row)
+    rows_in_file = 0
+
+    # Row 1 is the header, so the first data row is row 2, as in Excel.
+    for row_number, row in enumerate(reader, start=2):
+        values = {k: (row.get(k) or "").strip() for k in REQUIRED_COLUMNS}
+        if not any(values.values()):
+            continue  # skip blank lines
+
+        rows_in_file += 1
+        if rows_in_file > MAX_UPLOAD_ROWS:
+            db.rollback()
+            errors.clear()
+            return fail_whole_file(
+                f"The file has more than {MAX_UPLOAD_ROWS:,} rows. Split it into smaller files.",
+                rows_in_file,
+            )
+
+        problems = []
+
+        type_text = values["metric_type"]
+        metric_type_id = None
+        if not type_text:
+            problems.append("metric_type is empty")
+        else:
+            metric_type_id = metric_types.get(type_text.lower())
+            if metric_type_id is None:
+                problems.append(f'"{type_text}" is not a known metric type')
+
+        date_text = values["metric_date"]
+        metric_date = None
+        if not date_text:
+            problems.append("metric_date is empty")
+        else:
+            metric_date = parse_metric_date(date_text)
+            if metric_date is None:
+                problems.append(f'"{date_text}" is not a date. Use YYYY-MM-DD, like 2026-09-01')
+            elif metric_date > today_date:
+                problems.append(f"{metric_date} is in the future")
+
+        count_text = values["count"]
+        count = None
+        if not count_text:
+            problems.append("count is empty")
+        elif count_text.startswith("-") and is_whole_number(count_text[1:]):
+            problems.append("count can't be negative")
+        elif not is_whole_number(count_text):
+            problems.append(f'count "{count_text}" is not a whole number')
+        else:
+            count = int(count_text)
+            if count > MAX_COUNT:
+                problems.append("count is too large")
+                count = None
+
+        if not problems:
+            key = (metric_type_id, metric_date)
+            if key in valid:
+                problems.append(
+                    f"duplicates row {valid[key][1]} (same metric type and date)"
+                )
+
+        if problems:
+            errors.append({"Row": row_number, "Message": "; ".join(problems)})
+        else:
+            valid[(metric_type_id, metric_date)] = (count, row_number)
+
+    if rows_in_file == 0:
+        return fail_whole_file("The file has no data rows.")
+
+    if not valid:
+        upload = record_upload("failed", rows_in_file)
+        db.commit()
+        db.refresh(upload)
+        return summary(upload, rows_in_file)
+
+    # Save: a row whose metric type and date already exist for this
+    # department replaces the old count instead of being added twice.
+    try:
+        dates = {key[1] for key in valid}
+        existing = {
+            (m.metric_type_id, m.metric_date): m
+            for m in db.query(Metric).filter(
+                Metric.department_id == department_id,
+                Metric.metric_date.in_(dates),
+            )
+        }
+
+        added = updated = unchanged = 0
+        for (metric_type_id, metric_date), (count, _) in valid.items():
+            current = existing.get((metric_type_id, metric_date))
+            if current is None:
+                db.add(Metric(
+                    department_id=department_id,
+                    metric_type_id=metric_type_id,
+                    metric_date=metric_date,
+                    count=count,
+                ))
+                added += 1
+            elif current.count != count:
+                current.count = count
+                updated += 1
+            else:
+                unchanged += 1
+
+        upload = record_upload("partial" if errors else "success", rows_in_file)
+        db.commit()
+        db.refresh(upload)
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Could not save the upload. Nothing was changed.")
+
+    return summary(upload, rows_in_file, added, updated, unchanged)
