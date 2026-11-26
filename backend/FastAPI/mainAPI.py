@@ -12,6 +12,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 from sqlalchemy import func, distinct, case, insert
@@ -767,3 +768,57 @@ def upload_metrics_csv(
         raise HTTPException(status_code=500, detail="Could not save the upload. Nothing was changed.")
 
     return summary(upload, rows_in_file, added, updated, unchanged)
+
+@app.get("/metrics/export")
+def export_metrics_csv(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    department_id: Optional[int] = None, 
+    current_user: User = Depends(get_user),
+    db: Session = Depends(get_db),
+):
+    # Check the user's permissions
+    curr_role = get_role(current_user)
+    check_range(start, end)
+    if curr_role in read_permissions:
+        pass
+    elif curr_role in read_and_write_permissions:
+        if current_user.department_id is None:
+            raise HTTPException(status_code=403, detail="User hasn't been assigned to a department.")
+        if department_id is not None and department_id != current_user.department_id:
+            raise HTTPException(status_code=403, detail="User doesn't have permission to view this department.")
+        department_id = current_user.department_id
+    else:
+        raise HTTPException(status_code=403, detail="User doesn't have read permissions.")
+    # Retrieve the metrics and their metric type names
+    q = (db.query(Metric, MetricType.name).join(MetricType, Metric.metric_type_id == MetricType.id))
+    if department_id is not None:
+        q = q.filter(Metric.department_id == department_id)
+    if start is not None:
+        q = q.filter(Metric.metric_date >= start)
+    if end is not None:
+        q = q.filter(Metric.metric_date <= end)
+    metrics = q.order_by(Metric.metric_date.asc()).all()
+    # Create the CSV file
+    out = io.StringIO(newline="")
+    writer = csv.writer(out)
+    # Write the CSV headers for the columns
+    writer.writerow([
+        "metric_id",
+        "department_id",
+        "metric_type",
+        "metric_date",
+        "count"
+    ])
+    # Write the metrics for a CSV row
+    for metric, metric_type_name in metrics:
+        writer.writerow([
+            metric.id,
+            metric.department_id,
+            metric_type_name,
+            metric.metric_date.isoformat(),
+            metric.count
+        ])
+    # Send the CSV file back as a downloadable file for the user
+    out.seek(0)
+    return StreamingResponse(iter([out.getvalue()]), media_type="text/csv", headers= {"Content-Disposition": 'attachment; filename="metrics_export.csv"'})
