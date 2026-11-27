@@ -13,7 +13,7 @@ class User(Base):
     email = Column(String(150), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     role = Column(Enum("dean", "vp", "director", "assistant_director",
-                       "department_administrator"), nullable=False)
+                       "department_administrator","system_admin"), nullable=False)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     password_hash = Column(String(255), nullable=True)
 class MetricType(Base):

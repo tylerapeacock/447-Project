@@ -29,7 +29,7 @@ CREATE TABLE users (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(150) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,   -- bcrypt hash, never a plain password
-    role ENUM('dean', 'vp', 'director', 'assistant_director', 'department_administrator') NOT NULL,
+    role ENUM('dean', 'vp', 'director', 'assistant_director', 'department_administrator', 'system_admin') NOT NULL,
     -- dean, vp, director, assistant_director: read-only, portfolio-wide (department_id stays NULL)
     -- department_administrator: read/write, scoped to their own department (department_id required)
     department_id INT,
@@ -131,6 +131,7 @@ INSERT INTO metric_types (name, description) VALUES
 -- will get their own hashes created through the application.
 INSERT INTO users (name, email, password_hash, role, department_id) VALUES
 ('Test Admin', '1234', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'department_administrator', 1),
+('System Admin', 'sysadmin@umbc.edu','$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'system_admin', NULL),
 ('Joe Joe', 'jj@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'dean', NULL),
 ('Sample VP', 'vp@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'vp', NULL),
 ('Retriever Essentials Director', 'essentials_dir@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'director', NULL),
