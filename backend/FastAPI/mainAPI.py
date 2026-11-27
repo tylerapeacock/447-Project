@@ -86,7 +86,7 @@ def get_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 # Sets which roles have read permissions vs both read and write permissions
 read_permissions = {"dean", "vp"}
 read_and_write_permissions = {"director", "assistant_director", "department_administrator"}
-
+admin_permissions = {"system_admin"}
 
 # Defines extracting a user's role
 def get_role(user: User) -> str:
@@ -822,3 +822,80 @@ def export_metrics_csv(
     # Send the CSV file back as a downloadable file for the user
     out.seek(0)
     return StreamingResponse(iter([out.getvalue()]), media_type="text/csv", headers= {"Content-Disposition": 'attachment; filename="metrics_export.csv"'})
+
+# Check that the user has admin level permissions
+def check_admin_permissions(current_user: User = Depends(get_user)) -> User:
+    curr_role = get_role(current_user)
+    if curr_role != "system_admin":
+        raise HTTPException(status_code=403, detail="User doesn't have system administrator permissions.")
+    return current_user 
+
+class CreateUser(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    email: str
+    password: str
+    role: str 
+    department_id: Optional[int] = None 
+
+@app.post("/users") 
+def create_user(
+    user_info: CreateUser,
+    current_user: User = Depends(check_admin_permissions),
+    db: Session = Depends(get_db)):
+    # Possible roles that a user to be created can be assigned 
+    possible_roles = {
+        "dean",
+        "vp",
+        "director",
+        "assistant_director",
+        "department_administrator",
+        "system_admin"
+    }
+    email = user_info.email.strip().lower()
+    new_user_role = user_info.role.strip().lower()
+    name = user_info.name.strip()
+    if not name or not email:
+        raise HTTPException(status_code=422, detail="Name and Email are required.")
+    # Check the user role is valid, user's role doesn't already exist, 
+    # and is assigned to a valid department
+    if new_user_role not in possible_roles:
+        raise HTTPException(status_code=422, detail="Invalid user role.")
+    user_already_exists = db.query(User).filter(User.email == email).first()
+    if user_already_exists:
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+    role_required = {"director", "assistant_director","department_administrator"}
+    if new_user_role in role_required:
+        if user_info.department_id is None:
+            raise HTTPException(status_code=422, detail="This role requires a department assignment.")
+        department_assignment = db.query(Department).filter(Department.id == user_info.department_id).first()
+        if department_assignment is None:
+            raise HTTPException(status_code=422, detail="Invalid department ID assignment.")
+    elif user_info.department_id is not None:
+        raise HTTPException(status_code=422, detail="This role cannot be assigned to a department.")
+    # Manages creating a new/secure password for the new user
+    if len(user_info.password) < 5:
+        raise HTTPException(status_code=422, detail="Password must contain at least 12 characters.")
+    hashed_password = bcrypt.hashpw(user_info.password.encode(), bcrypt.gensalt()).decode() 
+    create_new_user = User(
+        name = user_info.name,
+        email = user_info.email,
+        password_hash = hashed_password,
+        role = new_user_role,
+        department_id = user_info.department_id
+    )
+    try:
+        db.add(create_new_user)
+        db.commit()
+        db.refresh(create_new_user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Couldn't create account. Email may already exist.")
+    return {
+        "User ID": create_new_user.id,
+        "User Name": create_new_user.name,
+        "Email": create_new_user.email,
+        "User's Role": get_role(create_new_user),
+        "Department ID": create_new_user.department_id,
+        "Message" : "User account created successfully."
+    }
