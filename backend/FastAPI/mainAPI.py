@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, distinct, case, insert
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from database import get_db
-from models import Department, User, Metric, MetricType, ServiceEvent, Enrollment, Upload
+from models import Department, User, Metric, MetricType, ServiceEvent, Enrollment, Upload, DepartmentMetricType
 
 
 
@@ -131,6 +131,14 @@ def get_metric_info(metric_id: int, user: User, db: Session) -> Metric:
     return retrieved_metric
 
 
+
+# Each department may only record its own metric types (department_metric_types table)
+def department_tracks(db: Session, department_id: int, metric_type_id: int) -> bool:
+    return db.query(DepartmentMetricType).filter(
+        DepartmentMetricType.department_id == department_id,
+        DepartmentMetricType.metric_type_id == metric_type_id,
+    ).first() is not None
+
 # When creating a metric (POST), all fields are required to have a metric id, metric date, and a count
 class CreatingMetric(BaseModel):
     # Rejects the user from adding extra fields
@@ -169,6 +177,8 @@ def login(creds: LoginRequest, db: Session = Depends(get_db)):
 # Defines creating a new metric
 @app.post("/metrics",status_code = 201)
 def create_new_metric(metric_data: CreatingMetric, current_user: User = Depends(modify_permissions), db: Session = Depends(get_db)):
+    if not department_tracks(db, current_user.department_id, metric_data.metric_type_id):
+        raise HTTPException(status_code=422, detail="Error: Your department doesn't track this metric type.")
     new_metric = Metric(department_id = current_user.department_id, metric_type_id = metric_data.metric_type_id, metric_date = metric_data.metric_date, count = metric_data.count)
     db.add(new_metric)
     db.commit()
@@ -191,6 +201,8 @@ def update_metric(metric_id: int, metric_info: UpdatingMetric, current_user: Use
         metric_type = db.query(MetricType).filter(MetricType.id == new_update["metric_type_id"]).first()  
         if metric_type is None:
             raise HTTPException(status_code = 422, detail = "Error: Invalid metric_type_id, this metric types doesn't exist.")
+        if not department_tracks(db, current_user.department_id, new_update["metric_type_id"]):
+            raise HTTPException(status_code = 422, detail = "Error: Your department doesn't track this metric type.")
     # Set the new attributes
     try:
         for key, value in new_update.items():
@@ -654,6 +666,11 @@ def upload_metrics_csv(
     metric_types = {
         t.name.strip().lower(): t.id for t in db.query(MetricType).all()
     }
+        # Only the metric types this department tracks can be saved
+    allowed_type_ids = {
+        row.metric_type_id
+        for row in db.query(DepartmentMetricType).filter(DepartmentMetricType.department_id == department_id)
+    }
     today_date = date.today()
 
     valid = {}        # (metric_type_id, metric_date) -> (count, csv_row)
@@ -684,6 +701,8 @@ def upload_metrics_csv(
             metric_type_id = metric_types.get(type_text.lower())
             if metric_type_id is None:
                 problems.append(f'"{type_text}" is not a known metric type')
+            elif metric_type_id not in allowed_type_ids:
+                problems.append(f'"{type_text}" is not tracked by your department')
 
         date_text = values["metric_date"]
         metric_date = None

@@ -142,7 +142,7 @@ export default function CsvChart({
 
   // ---- Derive columns -----------------------------------------------------
   const columns = useMemo(
-    () => (rawRows.length ? Object.keys(rawRows[0]) : []),
+    () => [...new Set(rawRows.flatMap((r) => Object.keys(r)))],
     [rawRows]
   );
 
@@ -150,11 +150,13 @@ export default function CsvChart({
 
   const seriesKeys = useMemo(() => {
     if (valueKeys) return valueKeys;
-    return columns.filter(
-      (col) =>
-        col !== xKey &&
-        rawRows.slice(0, 10).some((r) => typeof r[col] === "number")
-    );
+    return columns
+      .filter(
+        (col) =>
+          col !== xKey &&
+          rawRows.some((r) => typeof r[col] === "number")
+      )
+      .sort(); // same order everywhere, so each type keeps its color
   }, [valueKeys, columns, xKey, rawRows]);
 
   // Rows with a numeric timestamp, sorted by date.
