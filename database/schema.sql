@@ -32,6 +32,7 @@ CREATE TABLE users (
     role ENUM('dean', 'vp', 'director', 'assistant_director', 'department_administrator', 'system_admin') NOT NULL,
     -- dean, vp, director, assistant_director: read-only, portfolio-wide (department_id stays NULL)
     -- department_administrator: read/write, scoped to their own department (department_id required)
+    -- system_admin: creates user accounts, no access to metrics (department_id stays NULL)
     department_id INT,
     FOREIGN KEY (department_id) REFERENCES departments(id)
 );
@@ -55,6 +56,20 @@ CREATE TABLE metrics (
     metric_date DATE NOT NULL,
     count INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES departments(id),
+    FOREIGN KEY (metric_type_id) REFERENCES metric_types(id)
+);
+
+
+-- ============================================================
+-- which metric types each department tracks
+-- a department can only add metrics of its own types
+-- ============================================================
+
+CREATE TABLE department_metric_types (
+    department_id INT NOT NULL,
+    metric_type_id INT NOT NULL,
+    PRIMARY KEY (department_id, metric_type_id),
     FOREIGN KEY (department_id) REFERENCES departments(id),
     FOREIGN KEY (metric_type_id) REFERENCES metric_types(id)
 );
@@ -124,6 +139,14 @@ INSERT INTO metric_types (name, description) VALUES
 ('Meal Swipes Donated', 'Number of meal swipes donated by students'),
 ('Meal Swipes Received', 'Number of meal swipes received by students in need'),
 ('Care Team Contacts', 'Number of one-on-one social worker connections');
+
+
+-- Metric types each department tracks (ids from the two lists above)
+INSERT INTO department_metric_types (department_id, metric_type_id) VALUES
+(1, 1), (1, 2), (1, 3), (1, 5), (1, 6), (1, 7),   -- Retriever Essentials
+(2, 1), (2, 4), (2, 8),                           -- Retriever Care
+(3, 1), (3, 5),                                   -- Engagement and Belonging
+(4, 1), (4, 3), (4, 4), (4, 8);                   -- Dean of Students Office
  
  
 -- Every seeded account has the development password: 1234
@@ -137,7 +160,9 @@ INSERT INTO users (name, email, password_hash, role, department_id) VALUES
 ('Retriever Essentials Director', 'essentials_dir@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'director', NULL),
 ('Retriever Care Director', 'care_dir@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'director', NULL),
 ('Retriever Essentials Admin', 'essentials_admin@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'department_administrator', 1),
-('Retriever Care Admin', 'care_admin@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'department_administrator', 2);
+('Retriever Care Admin', 'care_admin@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'department_administrator', 2),
+('Engagement and Belonging Admin', 'engagement_admin@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'department_administrator', 3),
+('Dean of Students Office Admin', 'dos_admin@umbc.edu', '$2b$12$fjZamqSaUW3o/UihweQ1P.3WHGMGE6SIVr3lvAqz3HN81Ew.0WUg6', 'department_administrator', 4);
  
  
 INSERT INTO metrics (department_id, metric_type_id, metric_date, count) VALUES

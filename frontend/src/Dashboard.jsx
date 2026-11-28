@@ -27,6 +27,12 @@ function Dashboard() {
 
   const { user, logout } = useAuth();
 
+
+  // Every metric type that appears on any date, sorted so each keeps the same color
+  const seriesKeys = [...new Set(metrics.flatMap((r) => Object.keys(r)))]
+    .filter((k) => k !== "Date")
+    .sort();
+
   useEffect(() => {
     getMetrics()
     .then((rows) => setMetrics(pivotMetrics(rows)))

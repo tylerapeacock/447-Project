@@ -65,3 +65,11 @@ class Enrollment(Base):
     category = Column(String(50), nullable=False)
     value = Column(String(50), nullable=False)
     headcount = Column(Integer, nullable=False)
+
+class DepartmentMetricType(Base):
+    """Which metric types each department tracks."""
+
+    __tablename__ = "department_metric_types"
+
+    department_id = Column(Integer, ForeignKey("departments.id"), primary_key=True)
+    metric_type_id = Column(Integer, ForeignKey("metric_types.id"), primary_key=True)
